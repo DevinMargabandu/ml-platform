@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Fraud Detection ML Platform</title>
+<link rel="stylesheet" href="/static/style.css" />
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+</head>
+<body>
+  <header>
+    <div class="header-inner">
+      <div class="logo">
+        <span class="logo-icon">🛡</span>
+        <span>FraudGuard ML Platform</span>
+      </div>
+      <div class="header-right">
+        <span class="uptime-label" id="uptime-label"></span>
+        <div id="health-badge" class="badge badge-loading">Connecting…</div>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <!-- ── Status Bar ─────────────────────────────────────────── -->
+    <section class="status-bar">
+      <div class="stat-card">
+        <div class="stat-label">Active Model</div>
+        <div class="stat-value mono" id="active-model">—</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Total Predictions</div>
+        <div class="stat-value" id="total-preds">—</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">ROC-AUC</div>
+        <div class="stat-value" id="roc-auc">—</div>
+        <div class="stat-sub" id="cv-auc"></div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Optimal Threshold</div>
+        <div class="stat-value" id="threshold">—</div>
+        <div class="stat-sub">F1-optimized</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Avg Latency</div>
+        <div class="stat-value" id="avg-latency">—</div>
+      </div>
+      <div class="stat-card" id="drift-card">
+        <div class="stat-label">Drift Status</div>
+        <div class="stat-value" id="drift-status">—</div>
+      </div>
+    </section>
+
+    <!-- ── Alert banner ────────────────────────────────────────── -->
+    <div id="alert-banner" class="alert-banner hidden"></div>
+
+    <div class="grid-2col">
+      <!-- ── Prediction Form ──────────────────────────────────── -->
+      <section class="card">
+        <h2>Run a Prediction</h2>
+        <form id="predict-form">
+          <div class="form-grid">
+            <label>Amount ($)
+              <input type="number" id="amount" value="850" step="0.01" min="0.01" required />
+            </label>
+            <label>Hour of Day (0–23)
+              <input type="number" id="hour_of_day" value="2" min="0" max="23" required />
+            </label>
+            <label>Day of Week (0=Mon)
+              <input type="number" id="day_of_week" value="6" min="0" max="6" required />
+            </label>
+            <label>Merchant Category (0–9)
+              <input type="number" id="merchant_category" value="8" min="0" max="9" required />
+            </label>
+            <label>Distance from Home (km)
+              <input type="number" id="distance_from_home" value="450" step="0.1" min="0" required />
+            </label>
+            <label>Velocity 1h (# txns)
+              <input type="number" id="velocity_1h" value="7" min="0" required />
+            </label>
+            <label>Velocity 24h (# txns)
+              <input type="number" id="velocity_24h" value="18" min="0" required />
+            </label>
+            <label>Amount Z-Score
+              <input type="number" id="amount_z_score" value="3.2" step="0.1" required />
+            </label>
+            <label class="checkbox-label">
+              <input type="checkbox" id="is_weekend" checked />
+              Weekend transaction
+            </label>
+          </div>
+          <div class="api-version-row">
+            <label>API Version
+              <select id="api-version">
+                <option value="v2">v2 — enriched (risk band + factors)</option>
+                <option value="v1">v1 — simple (flag + probability)</option>
+              </select>
+            </label>
+          </div>
+          <button type="submit" class="btn-primary" id="submit-btn">Analyze Transaction</button>
+        </form>
+
+        <div id="result-box" class="result-box hidden">
+          <div id="result-verdict" class="verdict"></div>
+          <div class="result-details">
+            <div class="detail-row"><span>Fraud Probability</span><span id="res-prob">—</span></div>
+            <div class="detail-row"><span>Risk Band</span><span id="res-risk" class="badge">—</span></div>
+            <div class="detail-row"><span>Model Version</span><span id="res-version" class="mono">—</span></div>
+            <div class="detail-row"><span>Latency</span><span id="res-latency">—</span></div>
+            <div class="detail-row"><span>Request ID</span><span id="res-reqid" class="mono text-muted small">—</span></div>
+          </div>
+          <div id="risk-factors-section" class="hidden">
+            <h4>Top Risk Factors</h4>
+            <div id="risk-factors-list"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ── Model Comparison ────────────────────────────────── -->
+      <section class="card">
+        <h2>Model Comparison</h2>
+        <div id="model-table-wrap">
+          <table class="model-table" id="model-table">
+            <thead>
+              <tr>
+                <th>Version</th>
+                <th>Algorithm</th>
+                <th>ROC-AUC</th>
+                <th>CV ± σ</th>
+                <th>Threshold</th>
+                <th>F1</th>
+                <th>Status</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="model-tbody">
+              <tr><td colspan="8" class="loading-cell">Loading…</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <canvas id="metrics-chart" height="170"></canvas>
+      </section>
+    </div>
+
+    <!-- ── Live Prediction Feed ────────────────────────────────── -->
+    <section class="card full-width">
+      <div class="card-header-row">
+        <h2>Live Prediction Feed</h2>
+        <div class="feed-controls">
+          <span class="feed-rate" id="feed-rate"></span>
+          <label class="toggle-label">
+            <input type="checkbox" id="feed-auto" checked />
+            Auto-refresh
+          </label>
+        </div>
+      </div>
+      <div class="table-scroll">
+        <table class="feed-table">
+          <thead>
+            <tr>
+              <th>Time</th>
+              <th>Amount</th>
+              <th>Probability</th>
+              <th>Risk</th>
+              <th>Verdict</th>
+              <th>Model</th>
+              <th>Latency</th>
+              <th>Transaction ID</th>
+            </tr>
+          </thead>
+          <tbody id="feed-tbody">
+            <tr><td colspan="8" class="loading-cell">Waiting for predictions…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ── Monitoring ──────────────────────────────────────────── -->
+    <section class="card full-width">
+      <div class="card-header-row">
+        <h2>Model Monitoring</h2>
+        <button class="btn-secondary" id="refresh-monitoring">Refresh</button>
+      </div>
+      <div class="monitor-grid">
+        <div class="monitor-stat">
+          <div class="monitor-label">Observed Fraud Rate</div>
+          <div class="monitor-value" id="mon-fraud-rate">—</div>
+          <div class="monitor-sub" id="mon-baseline">Baseline: 1.50%</div>
+        </div>
+        <div class="monitor-stat">
+          <div class="monitor-label">PSI Score</div>
+          <div class="monitor-value" id="mon-psi">—</div>
+          <div class="monitor-sub">Alert threshold: 0.20</div>
+        </div>
+        <div class="monitor-stat">
+          <div class="monitor-label">Window Size</div>
+          <div class="monitor-value" id="mon-window">—</div>
+          <div class="monitor-sub">recent predictions</div>
+        </div>
+        <div class="monitor-stat">
+          <div class="monitor-label">Labeled Accuracy</div>
+          <div class="monitor-value" id="mon-accuracy">—</div>
+          <div class="monitor-sub">requires chargeback feedback</div>
+        </div>
+      </div>
+      <canvas id="monitoring-chart" height="110"></canvas>
+    </section>
+  </main>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

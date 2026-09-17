@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: fraud-ml-platform
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt && pip install pydantic-settings prometheus-client
+    startCommand: PYTHONPATH=. uvicorn api.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: PYTHONPATH
+        value: .
+      - key: DATABASE_URL
+        value: sqlite:///./data/fraud.db
+      - key: MLFLOW_TRACKING_URI
+        value: sqlite:///./mlruns/mlflow.db
+    healthCheckPath: /health

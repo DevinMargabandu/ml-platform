@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ml-platform"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = []
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["db*", "data*", "training*", "api*", "monitoring*"]
+
+[tool.setuptools.py-modules]
+# Root-level modules needed for import (settings, config)
+# Use PYTHONPATH=. for scripts or `pip install -e .` to put root on path
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+
+[tool.ruff]
+line-length = 100
