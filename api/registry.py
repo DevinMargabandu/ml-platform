@@ -50,7 +50,12 @@ class ModelRegistry:
     def _load(self, artifact_path: str) -> object:
         path = Path(artifact_path)
         if not path.exists():
-            raise FileNotFoundError(f"Model artifact not found: {artifact_path}")
+            # Stored path may be from a different machine; try relative models/ dir
+            fallback = Path(__file__).parent.parent / "models" / path.name
+            if fallback.exists():
+                path = fallback
+            else:
+                raise FileNotFoundError(f"Model artifact not found: {artifact_path}")
         return joblib.load(path)
 
     def get(self, version: str, db: Session) -> object:
