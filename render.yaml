@@ -3,7 +3,7 @@ services:
     name: fraud-ml-platform
     runtime: python
     plan: free
-    buildCommand: pip install -r requirements.txt && pip install pydantic-settings prometheus-client
+    buildCommand: pip install -r requirements.txt
     startCommand: PYTHONPATH=. uvicorn api.main:app --host 0.0.0.0 --port $PORT
     envVars:
       - key: PYTHONPATH
