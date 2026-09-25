@@ -75,7 +75,7 @@ class ModelRegistry:
     def get_threshold(self, version: str, db: Session) -> float:
         """Return the F1-optimal threshold for this model version (default 0.5)."""
         mv = db.query(ModelVersion).filter(ModelVersion.version == version).first()
-        if mv and mv.optimal_threshold:
+        if mv and mv.optimal_threshold and mv.optimal_threshold < 1.0:
             return mv.optimal_threshold
         return 0.5
 

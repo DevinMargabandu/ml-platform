@@ -93,7 +93,9 @@ def find_optimal_threshold(y_true, y_prob):
     precisions, recalls, thresholds = precision_recall_curve(y_true, y_prob)
     f1s = 2 * precisions * recalls / (precisions + recalls + 1e-9)
     best_idx = f1s[:-1].argmax()
-    return float(thresholds[best_idx])
+    # Cap at 0.95 — isotonic calibration can produce probabilities of exactly 1.0,
+    # which would make the threshold degenerate (nothing classified as fraud below 100%)
+    return min(float(thresholds[best_idx]), 0.95)
 
 
 def train_version(version, train_df, test_df, db):
