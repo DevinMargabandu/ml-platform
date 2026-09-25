@@ -13,6 +13,7 @@ Key decisions vs. the naive implementation:
 import uuid
 import time
 import logging
+import threading
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 
@@ -42,6 +43,30 @@ from settings import settings
 logger = logging.getLogger("fraud_api")
 
 
+def _background_train():
+    """Train models on first deploy when no artifacts exist. Runs in a daemon thread."""
+    try:
+        logger.info("No models found — starting background training (this takes 5-10 min)")
+        from data.ingest import run as ingest_run
+        ingest_run()
+        logger.info("Data ingested — training models now")
+        from training.train_render import run as train_run
+        train_run()
+        logger.info("Training complete — loading models into cache")
+        db = SessionLocal()
+        try:
+            for mv in db.query(ModelVersion).all():
+                registry.get(mv.version, db)
+                logger.info(f"Loaded model {mv.version} into registry")
+                if mv.is_active:
+                    MODEL_INFO.info({"version": mv.version, "algorithm": mv.algorithm})
+        finally:
+            db.close()
+        logger.info("Models ready. System status will update to OK on next health check.")
+    except Exception:
+        logger.exception("Background training failed")
+
+
 # ── Lifespan ──────────────────────────────────────────────────────────────────
 
 @asynccontextmanager
@@ -51,14 +76,18 @@ async def lifespan(app: FastAPI):
 
     db = next(get_db())
     try:
-        for mv in db.query(ModelVersion).all():
-            try:
-                registry.get(mv.version, db)
-                logger.info("Model loaded", extra={"version": mv.version, "algorithm": mv.algorithm})
-                if mv.is_active:
-                    MODEL_INFO.info({"version": mv.version, "algorithm": mv.algorithm})
-            except FileNotFoundError:
-                logger.warning("Artifact missing", extra={"version": mv.version})
+        if db.query(ModelVersion).count() == 0:
+            # No models yet (fresh deploy) — train in background so server starts immediately
+            threading.Thread(target=_background_train, daemon=True).start()
+        else:
+            for mv in db.query(ModelVersion).all():
+                try:
+                    registry.get(mv.version, db)
+                    logger.info("Model loaded", extra={"version": mv.version, "algorithm": mv.algorithm})
+                    if mv.is_active:
+                        MODEL_INFO.info({"version": mv.version, "algorithm": mv.algorithm})
+                except FileNotFoundError:
+                    logger.warning("Artifact missing", extra={"version": mv.version})
     finally:
         db.close()
 
