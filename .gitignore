@@ -7,3 +7,5 @@ build/
 mlruns/
 *.log
 .env
+models/*.joblib
+data/fraud.db
