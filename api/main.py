@@ -42,37 +42,6 @@ from settings import settings
 logger = logging.getLogger("fraud_api")
 
 
-# ── Auto-registration ─────────────────────────────────────────────────────────
-
-_MODEL_META = {
-    "v1": {"algorithm": "RandomForestClassifier", "description": "Interpretable baseline. 100 trees, balanced class weight, isotonic calibration."},
-    "v2": {"algorithm": "GradientBoostingClassifier", "description": "Higher AUC via boosting. 300 trees, lr=0.05, isotonic calibration."},
-}
-
-def _auto_register_models_if_needed(db):
-    """Register model versions from disk if the DB is empty (e.g. fresh Render deploy)."""
-    if db.query(ModelVersion).count() > 0:
-        return
-    from pathlib import Path
-    models_dir = Path(__file__).parent.parent / "models"
-    for version, meta in _MODEL_META.items():
-        artifact = models_dir / f"model_{version}.joblib"
-        if artifact.exists():
-            mv = ModelVersion(
-                version=version,
-                algorithm=meta["algorithm"],
-                description=meta["description"],
-                artifact_path=str(artifact),
-                is_active=(version == "v1"),
-                roc_auc=1.0, f1_score=1.0, precision=1.0, recall=1.0,
-                optimal_threshold=0.5,
-                cv_roc_auc_mean=1.0, cv_roc_auc_std=0.0,
-            )
-            db.add(mv)
-            logger.info(f"Auto-registered {version} from {artifact}")
-    db.commit()
-
-
 # ── Lifespan ──────────────────────────────────────────────────────────────────
 
 @asynccontextmanager
@@ -82,7 +51,6 @@ async def lifespan(app: FastAPI):
 
     db = next(get_db())
     try:
-        _auto_register_models_if_needed(db)
         for mv in db.query(ModelVersion).all():
             try:
                 registry.get(mv.version, db)
